@@ -1,9 +1,9 @@
 [
   {
     "kernelSource": {
-      "name": "Genevn_KSU_SUSFS_Parrot",
+      "name": "kernel-msm-1",
       "repo": "https://github.com/015stray91/kernel-msm-1.git",
-      "branch": "master",
+      "branch": ""branch": "android-14-release-u1tgns34.42-86-2-32",",
       "device": "genevn"
     },
     "withKernelSU": true,
