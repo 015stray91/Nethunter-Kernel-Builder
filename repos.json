@@ -1,11 +1,12 @@
-[  {
+[
+  {
     "kernelSource": {
-      "name": "MikasaNethunter",
-      "repo": "https://github.com/noophyy/mikasa_kernel_realme2_c1.git",
-      "branch": "Light",
-      "device": "mikasa"
+      "name": "Genevn_KSU_SUSFS_Parrot",
+      "repo": "https://github.com/015stray91/kernel-msm-1.git",
+      "branch": "master",
+      "device": "genevn"
     },
-    "withKernelSU": false,
+    "withKernelSU": true,
     "toolchains": [
       {
         "repo": "https://android.googlesource.com/platform/prebuilts/gas/linux-x86",
@@ -13,26 +14,26 @@
         "name": "gas"
       },
       {
-        "repo": "https://github.com/kdrag0n/proton-clang.git",
-        "branch": "master",
+        "repo": "https://github.com/llvm/llvm-project",
+        "branch": "release/12.x",
         "name": "clang"
       }
     ],
     "params": {
       "ARCH": "arm64",
-      "CROSS_COMPILE": "aarch64-linux-gnu-",
-      "CROSS_COMPILE_ARM32": "arm-linux-gnueabi-",
-      "CROSS_COMPILE_COMPAT": "arm-linux-gnueabi-",
+      "CC": "clang",
+      "LLVM": "1",
+      "LLVM_IAS": "1",
       "CLANG_TRIPLE": "aarch64-linux-gnu-",
-      "AR": "llvm-ar",
-      "OBJDUMP": "llvm-objdump",
-      "STRIP": "llvm-strip",
-      "OBJCOPY": "llvm-objcopy",
-      "NM": "llvm-nm",
-      "CC": "clang"
+      "CROSS_COMPILE": "aarch64-linux-gnu-",
+      "LD": "ld.lld",
+      "BUILD_CONFIG": "build.config.msm.parrot"
     },
     "extraParams": {
-      "KEEP": ""
+      "DEFCONFIG": "genevn_defconfig",
+      "EXT_CONFIG": "vendor/ext_config/moto-parrot-genevn.config",
+      "PRE_BUILD_COMMAND": "unzip -o susfs4ksu-gki-android12-5.10.zip && chmod +x build.sh && export VARIANT=genevn",
+      "POST_BUILD_COMMAND": "cp out/arch/arm64/boot/Image AnyKernel3/"
     }
   }
 ]
