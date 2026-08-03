@@ -32,7 +32,7 @@
     "extraParams": {
       "DEFCONFIG": "ksu-nh.defconfig",
       "EXT_CONFIG": "vendor/ext_config/debug_moto_parrot_)genevn.config",
-      "PRE_BUILD_COMMAND":  export VARIANT=genevn",
+      "PRE_BUILD_COMMAND": 
       "POST_BUILD_COMMAND": "cp out/arch/arm64/boot/Image AnyKernel3/"
     }
   }
