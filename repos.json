@@ -1,9 +1,9 @@
 [
   {
     "kernelSource": {
-      "name": "kernel-msm-1",
+      "name": "genevn",
       "repo": "https://github.com/015stray91/kernel-msm-1.git",
-      "branch": "branch": "android-14-release-u1tgns34.42-86-2-32",
+      "branch": "branch":"main"
       "device": "genevn"
     },
     "withKernelSU": true,
@@ -21,18 +21,18 @@
     ],
     "params": {
       "ARCH": "arm64",
-      "CC": "clang",
-      "LLVM": "1",
-      "LLVM_IAS": "1",
+      "CC": "clang12",
+      "LLVM": "12",
+      "LLVM_IAS": "12",
       "CLANG_TRIPLE": "aarch64-linux-gnu-",
       "CROSS_COMPILE": "aarch64-linux-gnu-",
       "LD": "ld.lld",
       "BUILD_CONFIG": "build.config.msm.parrot"
     },
     "extraParams": {
-      "DEFCONFIG": "genevn_defconfig",
-      "EXT_CONFIG": "vendor/ext_config/moto-parrot-genevn.config",
-      "PRE_BUILD_COMMAND": "unzip -o susfs4ksu-gki-android12-5.10.zip && chmod +x build.sh && export VARIANT=genevn",
+      "DEFCONFIG": "ksu-nh.defconfig",
+      "EXT_CONFIG": "vendor/ext_config/debug_moto_parrot_)genevn.config",
+      "PRE_BUILD_COMMAND":  export VARIANT=genevn",
       "POST_BUILD_COMMAND": "cp out/arch/arm64/boot/Image AnyKernel3/"
     }
   }
