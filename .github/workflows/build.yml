@@ -1,27 +1,196 @@
+name: Build kernels
+
+on:
+  workflow_dispatch:
+    inputs:
+      repos_file:
+        description: 'Path to repos.json in the repo'
+        required: true
+        default: 'repos.json'
+      kernel_name:
+        description: 'Optional kernel name from repos.json to build'
+        required: false
+        default: ''
+      with_ksu:
+        description: 'Set to "true" to apply KernelSU patches + scripts from the superbuilders repo'
+        required: false
+        default: 'false'
+      superbuilders_repo:
+        description: 'Owner/repo for superbuilders (defaults to 015stray91/superbuilders)'
+        required: false
+        default: '015stray91/superbuilders'
+
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # STOP JS 20 error here
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: Checkout Source
-        uses: actions/checkout@v4 # Or latest v5/v6
+      - name: Checkout repository into kernel/source
+        uses: actions/checkout@v4
         with:
           path: kernel/source
 
-      - name: Auto-Patch & Overclock
+      - name: Checkout superbuilders (patches & scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.superbuilders_repo }}
+          path: superbuilders
+          # If the superbuilders repo is private, create a repo-scoped PAT and set it as SUPERBUILDERS_TOKEN, then uncomment next line:
+          # token: ${{ secrets.SUPERBUILDERS_TOKEN }}
+
+      - name: Copy selected repos.json (optional)
         run: |
+          echo "Using repos file: ${{ github.event.inputs.repos_file }}"
+          if [ -f "${{ github.workspace }}/${{ github.event.inputs.repos_file }}" ]; then
+            cp "${{ github.workspace }}/${{ github.event.inputs.repos_file }}" ./repos.json
+            echo "repos.json copied"
+          else
+            echo "Warning: repos file not found at ${{ github.workspace }}/${{ github.event.inputs.repos_file }}"
+          fi
+
+      - name: Auto-Patch & Overclock (local patches)
+        run: |
+          set -e
+          cd kernel/source || exit 0
+          if [ -f "../../50_add_susfs_in_gki-android12-5.10.patch" ]; then
+            git apply ../../50_add_susfs_in_gki-android12-5.10.patch || true
+          fi
+          if [ -f arch/arm64/boot/dts/vendor/qcom/parrot-cpu.dtsi ]; then
+            sed -i 's/2208000/2400000/g' arch/arm64/boot/dts/vendor/qcom/parrot-cpu.dtsi || true
+          fi
+
+      - name: Apply KernelSU patches + run helpers from superbuilders (optional)
+        if: ${{ github.event.inputs.with_ksu == 'true' }}
+        run: |
+          set -euo pipefail
+          echo "KernelSU flow enabled: applying patches + running scripts from superbuilders"
           cd kernel/source
-          # Auto-apply SUSFS 5.10
-          git apply ../../50_add_susfs_in_gki-android12-5.10.patch
-          # Force 2.4GHz Speed
-          sed -i 's/2208000/2400000/g' arch/arm64/boot/dts/vendor/qcom/parrot-cpu.dtsi
+
+          SB_BASE="${{ github.workspace }}/superbuilders"
+          SUPERBUILDERS_PATCH_DIR="$SB_BASE/android12-5.10/KernelSU-Next/patches"
+
+          SEARCH_PATHS=(
+            "../../.github/ksu-patches"
+            "../../patches/ksu"
+            "../../ksu-patches"
+            "$SUPERBUILDERS_PATCH_DIR"
+            "$SB_BASE/android12-5.10/patches"
+            "$SB_BASE/android12-5.10/patches/ksu"
+          )
+
+          PATCHES=()
+          for DIR in "${SEARCH_PATHS[@]}"; do
+            if [ -d "$DIR" ]; then
+              echo "Searching for patches in $DIR"
+              while IFS= read -r -d '' P; do
+                PATCHES+=("$P")
+              done < <(find "$DIR" -maxdepth 1 -type f -name '*.patch' -print0 || true)
+            fi
+          done
+
+          if [ ${#PATCHES[@]} -eq 0 ]; then
+            echo "No .patch files found in any configured locations."
+          else
+            IFS=$'\n' PATCHES_SORTED=($(printf '%s\n' "${PATCHES[@]}" | sort -V))
+            unset IFS
+            for P in "${PATCHES_SORTED[@]}"; do
+              echo "-----"
+              echo "Processing patch: $P"
+              if git apply --check "$P" 2>/dev/null; then
+                echo "Applying with git apply"
+                git apply "$P" || { echo "git apply failed for $P"; exit 1; }
+              else
+                echo "git apply check failed, attempting git am --3way"
+                if git am --3way "$P" 2>/dev/null; then
+                  echo "git am applied $P"
+                else
+                  echo "git am failed, trying patch -p1 fallback"
+                  if patch -p1 < "$P"; then
+                    git add -A || true
+                    git commit -m "Apply patch $(basename "$P")" || true
+                  else
+                    echo "All apply attempts failed for $P — aborting"
+                    exit 1
+                  fi
+                fi
+              fi
+            done
+            echo "All patches from configured locations applied."
+          fi
+
+          LZ4_SRC="$SB_BASE/zram/lz4"
+          if [ -d "$LZ4_SRC" ]; then
+            echo "Found lz4 sources at $LZ4_SRC"
+            LZ4_DEST="$(pwd)/drivers/zram/lz4"
+            mkdir -p "$LZ4_DEST"
+            cp -v "$LZ4_SRC"/*.[ch] "$LZ4_DEST/" || true
+            echo "Copied lz4 files to $LZ4_DEST"
+          else
+            echo "No lz4 sources found at $LZ4_SRC"
+          fi
+
+          BUILD_HELPERS="$SB_BASE/android12-5.10/build-helpers"
+          if [ -d "$BUILD_HELPERS" ]; then
+            echo "Running helper scripts in $BUILD_HELPERS"
+            for s in "$BUILD_HELPERS"/*.sh; do
+              [ -e "$s" ] || continue
+              echo "Running $s"
+              chmod +x "$s" || true
+              bash "$s" || { echo "Script $s failed"; exit 1; }
+            done
+          else
+            echo "No android12-5.10/build-helpers directory found in superbuilders"
+          fi
+
+      - name: Merge vendor fragment into defconfig & validate (primary: merge_config.sh)
+        run: |
+          set -euo pipefail
+          cd kernel/source
+          FRAG="arch/arm64/configs/vendors/exp_config/debug_moto_parrot_genevn.config"
+          BASE_DEF="arch/arm64/configs/ksu-nh.defconfig"
+          if [ ! -f "$BASE_DEF" ]; then
+            echo "Base defconfig $BASE_DEF not found; aborting"
+            exit 1
+          fi
+          cp "$BASE_DEF" .config
+
+          if [ -x scripts/kconfig/merge_config.sh ]; then
+            echo "Using scripts/kconfig/merge_config.sh to merge fragment"
+            scripts/kconfig/merge_config.sh .config "$FRAG"
+            echo "Running make olddefconfig to resolve dependencies"
+            make ARCH=arm64 olddefconfig
+            MERGE_RC=0
+          else
+            echo "merge_config.sh not present, will try fallback path (KCONFIG_ALLCONFIG)"
+            MERGE_RC=1
+          fi
+
+          if [ "$MERGE_RC" -ne 0 ]; then
+            echo "Fallback: using KCONFIG_ALLCONFIG method"
+            cat "$FRAG" > /tmp/allconfig_fragment
+            KCONFIG_ALLCONFIG=/tmp/allconfig_fragment make ARCH=arm64 olddefconfig
+          fi
+
+          echo "Run make prepare to expose header/build problems early"
+          make ARCH=arm64 prepare
+
+      - name: Quick check for missing Kconfig symbols (helpful diagnostics)
+        run: |
+          set -euo pipefail
+          cd kernel/source
+          sed -n 's/^# \(CONFIG_[^ ]*\) is not set/\1=n/p; s/^\(CONFIG_[^=]*=.*\)/\1/p' .config | sort > /tmp/validated.config
+          while read -r line; do
+            key="${line%%=*}"
+            if ! grep -R --line-number -E "(^|\s)(config|menuconfig)\s+$key(\s|$)" -- arch include drivers fs scripts 2>/dev/null | grep -q .; then
+              echo "WARNING: symbol $key not found in Kconfig tree"
+            fi
+          done < /tmp/validated.config || true
+          echo "Validation checks completed (see warnings above if any)."
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: ./kernel/source/ # Local path for patched code
-          config: Genevn.config 
-          # Ensure Hybrid Mount engine is ON
-          extra-cmd: scripts/config --file arch/arm64/configs/Genevn.config -e CONFIG_OVERLAY_FS
-          
+          config: ksu-nh.defconfig
+          extra-cmd: scripts/config --file arch/arm64/configs/ksu-nh.defconfig -e CONFIG_OVERLAY_FS
