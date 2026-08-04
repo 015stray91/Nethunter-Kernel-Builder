@@ -3,7 +3,7 @@
     "kernelSource": {
       "name": "genevn",
       "repo": "https://github.com/015stray91/kernel-msm-1.git",
-      "branch": "branch":"main"
+      "branch": "main",
       "device": "genevn"
     },
     "withKernelSU": true,
@@ -31,8 +31,8 @@
     },
     "extraParams": {
       "DEFCONFIG": "ksu-nh.defconfig",
-      "EXT_CONFIG": "vendor/ext_config/debug_moto_parrot_)genevn.config",
-      "PRE_BUILD_COMMAND": 
+      "EXT_CONFIG": "vendor/ext_config/debug_moto_parrot_genevn.config",
+      "PRE_BUILD_COMMAND": "",
       "POST_BUILD_COMMAND": "cp out/arch/arm64/boot/Image AnyKernel3/"
     }
   }
